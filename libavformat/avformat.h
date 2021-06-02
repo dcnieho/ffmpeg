@@ -786,6 +786,12 @@ typedef struct AVInputFormat {
     int (*read_seek2)(struct AVFormatContext *s, int stream_index, int64_t min_ts, int64_t ts, int64_t max_ts, int flags);
 
     /**
+     * Allows sending messages from application to device.
+     */
+    int (*control_message)(struct AVFormatContext *s, int type,
+                           void *data, size_t data_size);
+
+    /**
      * Returns device list with it properties.
      * @see avdevice_list_devices() for more details.
      */
