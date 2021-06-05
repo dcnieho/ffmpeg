@@ -26,7 +26,7 @@
 #define V AV_OPT_FLAG_VIDEO_PARAM
 #define OFFSET(x) offsetof(AVDeviceCapabilitiesQuery, x)
 
-const AVOption av_device_capabilities[] = {
+const AVOption ff_device_capabilities[] = {
     { "codec", "codec", OFFSET(codec), AV_OPT_TYPE_INT,
         {.i64 = AV_CODEC_ID_NONE}, AV_CODEC_ID_NONE, INT_MAX, E|D|A|V },
     { "sample_format", "sample format", OFFSET(sample_format), AV_OPT_TYPE_SAMPLE_FMT,

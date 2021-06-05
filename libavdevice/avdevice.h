@@ -416,33 +416,7 @@ int avdevice_dev_to_app_control_message(struct AVFormatContext *s,
  *  avformat_free_context(oc);
  * @endcode
  */
-
-/**
- * Structure describes device capabilities.
- *
- * It is used by devices in conjunction with av_device_capabilities AVOption table
- * to implement capabilities probing API based on AVOption API. Should not be used directly.
- */
-typedef struct AVDeviceCapabilitiesQuery {
-    const AVClass *av_class;
-    AVFormatContext *device_context;
-    enum AVCodecID codec;
-    enum AVSampleFormat sample_format;
-    enum AVPixelFormat pixel_format;
-    int sample_rate;
-    int channels;
-    int64_t channel_layout;
-    int window_width;
-    int window_height;
-    int frame_width;
-    int frame_height;
-    AVRational fps;
-} AVDeviceCapabilitiesQuery;
-
-/**
- * AVOption table used by devices to implement device capabilities API. Should not be used by a user.
- */
-extern const AVOption av_device_capabilities[];
+typedef struct AVDeviceCapabilitiesQuery AVDeviceCapabilitiesQuery;
 
 /**
  * Initialize capabilities probing API based on AVOption API.

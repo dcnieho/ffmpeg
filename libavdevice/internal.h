@@ -19,10 +19,43 @@
 #ifndef AVDEVICE_INTERNAL_H
 #define AVDEVICE_INTERNAL_H
 
+#include "libavutil/log.h"
+#include "libavutil/opt.h"
+#include "libavutil/pixfmt.h"
+#include "libavutil/rational.h"
+#include "libavutil/samplefmt.h"
+#include "libavcodec/codec_id.h"
 #include "libavformat/avformat.h"
 
 av_warn_unused_result
 int ff_alloc_input_device_context(struct AVFormatContext **avctx, const AVInputFormat *iformat,
                                   const char *format);
+
+/**
+ * Structure describes device capabilities.
+ *
+ * It is used by devices in conjunction with ff_device_capabilities AVOption table
+ * to implement capabilities probing API based on AVOption API.
+ */
+struct AVDeviceCapabilitiesQuery {
+    const AVClass *av_class;
+    AVFormatContext *device_context;
+    enum AVCodecID codec;
+    enum AVSampleFormat sample_format;
+    enum AVPixelFormat pixel_format;
+    int sample_rate;
+    int channels;
+    int64_t channel_layout;
+    int window_width;
+    int window_height;
+    int frame_width;
+    int frame_height;
+    AVRational fps;
+};
+
+/**
+ * AVOption table used by devices to implement device capabilities API.
+ */
+extern const AVOption ff_device_capabilities[];
 
 #endif
