@@ -1503,6 +1503,45 @@ error:
     return ret;
 }
 
+static int dshow_control_message(AVFormatContext *avctx, int type, void *data, size_t data_size)
+{
+    struct dshow_ctx *ctx = avctx->priv_data;
+    int run_state = ctx->is_running;
+    HRESULT hr;
+
+    switch (type) {
+    case AV_APP_TO_DEV_PAUSE:
+        run_state = 0;
+        break;
+    case AV_APP_TO_DEV_PLAY:
+        run_state = 1;
+        break;
+    case AV_APP_TO_DEV_TOGGLE_PAUSE:
+        run_state = !run_state;
+        break;
+    }
+
+    // if play state change requested, apply
+    if (run_state != ctx->is_running) {
+        if (run_state)
+            hr = IMediaControl_Run(ctx->control);
+        else
+            hr = IMediaControl_Pause(ctx->control);
+
+        if (hr == S_FALSE) {
+            OAFilterState pfs;
+            hr = IMediaControl_GetState(ctx->control, 0, &pfs);
+        }
+        if (hr != S_OK) {
+            av_log(avctx, AV_LOG_ERROR, "Could not run/pause graph\n");
+            return AVERROR(EIO);
+        }
+        ctx->is_running = run_state;
+    }
+
+    return 0;
+}
+
 static enum AVCodecID waveform_codec_id(enum AVSampleFormat sample_fmt)
 {
     switch (sample_fmt) {
@@ -1747,6 +1786,7 @@ static int dshow_read_header(AVFormatContext *avctx)
         }
         // don't exit yet, allow it to list crossbar options in dshow_open_device
     }
+    ctx->is_running = 0;
     if (ctx->device_name[VideoDevice]) {
         if ((r = dshow_open_device(avctx, devenum, VideoDevice, VideoSourceDevice)) < 0 ||
             (r = dshow_add_device(avctx, VideoDevice)) < 0) {
@@ -1820,6 +1860,7 @@ static int dshow_read_header(AVFormatContext *avctx)
         av_log(avctx, AV_LOG_ERROR, "Could not run graph (sometimes caused by a device already in use by other application)\n");
         goto error;
     }
+    ctx->is_running = 1;
 
     ret = 0;
 
@@ -1932,6 +1973,7 @@ const AVInputFormat ff_dshow_demuxer = {
     .read_packet    = dshow_read_packet,
     .read_close     = dshow_read_close,
     .get_device_list= dshow_get_device_list,
+    .control_message= dshow_control_message,
     .flags          = AVFMT_NOFILE | AVFMT_NOBINSEARCH | AVFMT_NOGENSEARCH | AVFMT_NO_BYTE_SEEK,
     .priv_class     = &dshow_class,
 };

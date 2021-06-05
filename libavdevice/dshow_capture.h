@@ -331,6 +331,7 @@ struct dshow_ctx {
 
     IMediaControl *control;
     IMediaEvent *media_event;
+    int is_running;
 
     enum AVPixelFormat pixel_format;
     enum AVCodecID video_codec_id;
