@@ -318,6 +318,7 @@ struct dshow_ctx {
     IPin        *device_pin[2];
     DShowFilter *capture_filter[2];
     DShowPin    *capture_pin[2];
+    ICaptureGraphBuilder2 *graph_builder2[2];
 
     HANDLE mutex;
     HANDLE event[2]; /* event[0] is set by DirectShow
@@ -351,6 +352,15 @@ struct dshow_ctx {
  ****************************************************************************/
 HRESULT ff_dshow_try_setup_crossbar_options(ICaptureGraphBuilder2 *graph_builder2,
     IBaseFilter *device_filter, enum dshowDeviceType devtype, AVFormatContext *avctx);
+
+HRESULT ff_dshow_get_crossbar_and_filter(ICaptureGraphBuilder2 *graph_builder2, IBaseFilter *device_filter,
+    IAMCrossbar *cross_bar, IBaseFilter **cross_bar_base_filter);
+
+HRESULT ff_dshow_get_tvtuner_and_filter(ICaptureGraphBuilder2 *graph_builder2, IBaseFilter *device_filter,
+    IAMTVTuner *tv_tuner_filter, IBaseFilter *tv_tuner_base_filter);
+
+HRESULT ff_dshow_get_audiomixer_and_filter(ICaptureGraphBuilder2 *graph_builder2, IBaseFilter *device_filter,
+    IAMAudioInputMixer *tv_audio_filter, IBaseFilter *tv_audio_base_filter);
 
 void ff_dshow_show_filter_properties(IBaseFilter *pFilter, AVFormatContext *avctx);
 

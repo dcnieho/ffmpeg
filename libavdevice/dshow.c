@@ -240,6 +240,11 @@ dshow_read_close(AVFormatContext *s)
     struct dshow_ctx *ctx = s->priv_data;
     PacketListEntry *pktl;
 
+    if (ctx->graph_builder2[VideoDevice])
+        ICaptureGraphBuilder2_Release(ctx->graph_builder2[VideoDevice]);
+    if (ctx->graph_builder2[AudioDevice])
+        ICaptureGraphBuilder2_Release(ctx->graph_builder2[AudioDevice]);
+
     if (ctx->control) {
         IMediaControl_Stop(ctx->control);
         IMediaControl_Release(ctx->control);
@@ -1464,6 +1469,7 @@ dshow_open_device(AVFormatContext *avctx, ICreateDevEnum *devenum,
         av_log(avctx, AV_LOG_ERROR, "Could not create CaptureGraphBuilder2\n");
         goto error;
     }
+    ctx->graph_builder2[devtype] = graph_builder2;
     ICaptureGraphBuilder2_SetFiltergraph(graph_builder2, graph);
     if (r != S_OK) {
         av_log(avctx, AV_LOG_ERROR, "Could not set graph for CaptureGraphBuilder2\n");
@@ -1488,9 +1494,6 @@ dshow_open_device(AVFormatContext *avctx, ICreateDevEnum *devenum,
     ret = 0;
 
 error:
-    if (graph_builder2 != NULL)
-        ICaptureGraphBuilder2_Release(graph_builder2);
-
     if (pers_stream)
         IPersistStream_Release(pers_stream);
 
@@ -1536,10 +1539,48 @@ static int dshow_control_message(AVFormatContext *avctx, int type, void *data, s
                 ff_dshow_show_filter_properties(ctx->device_filter[devtype], avctx);
         } else if (dialog & 1<<2) {
             // crossbar_connection_dialog
-            // TODO
+            if (ctx->device_filter[devtype] && ctx->graph_builder2[devtype]) {
+                IAMCrossbar *cross_bar = NULL;
+                IBaseFilter *cross_bar_base_filter = NULL;
+                hr = ff_dshow_get_crossbar_and_filter(ctx->graph_builder2[devtype], ctx->device_filter[devtype], cross_bar, &cross_bar_base_filter);
+
+                if (hr == S_OK && cross_bar_base_filter)
+                    ff_dshow_show_filter_properties(cross_bar_base_filter, avctx);
+
+                if (cross_bar)
+                    IAMCrossbar_Release(cross_bar);
+                if (cross_bar_base_filter)
+                    IBaseFilter_Release(cross_bar_base_filter);
+            }
         } else if (dialog & 1<<3) {
             // tv_tuner_dialog
-            // TODO
+            if (ctx->device_filter[devtype] && ctx->graph_builder2[devtype]) {
+                if (devtype == VideoDevice) {
+                    IAMTVTuner *tv_tuner_filter = NULL;
+                    IBaseFilter *tv_tuner_base_filter = NULL;
+                    hr = ff_dshow_get_tvtuner_and_filter(ctx->graph_builder2[devtype], ctx->device_filter[devtype], tv_tuner_filter, tv_tuner_base_filter);
+
+                    if (hr == S_OK && tv_tuner_base_filter)
+                        ff_dshow_show_filter_properties(tv_tuner_base_filter, avctx);
+
+                    if (tv_tuner_filter)
+                        IAMTVTuner_Release(tv_tuner_filter);
+                    if (tv_tuner_base_filter)
+                        IBaseFilter_Release(tv_tuner_base_filter);
+                } else {
+                    IAMAudioInputMixer *tv_audio_filter = NULL;
+                    IBaseFilter *tv_audio_base_filter = NULL;
+                    hr = ff_dshow_get_audiomixer_and_filter(ctx->graph_builder2[devtype], ctx->device_filter[devtype], tv_audio_filter, tv_audio_base_filter);
+
+                    if (hr == S_OK && tv_audio_base_filter)
+                        ff_dshow_show_filter_properties(tv_audio_base_filter, avctx);
+
+                    if (tv_audio_filter)
+                        IAMAudioInputMixer_Release(tv_audio_filter);
+                    if (tv_audio_base_filter)
+                        IBaseFilter_Release(tv_audio_base_filter);
+                }
+            }
         }
         break;
     }

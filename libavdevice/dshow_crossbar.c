@@ -133,6 +133,44 @@ setup_crossbar_options(IAMCrossbar *cross_bar, enum dshowDeviceType devtype, AVF
     return S_OK;
 }
 
+HRESULT
+ff_dshow_get_crossbar_and_filter(ICaptureGraphBuilder2 *graph_builder2, IBaseFilter *device_filter,
+    IAMCrossbar *cross_bar, IBaseFilter **cross_bar_base_filter)
+{
+    HRESULT hr = ICaptureGraphBuilder2_FindInterface(graph_builder2, &LOOK_UPSTREAM_ONLY, (const GUID *) NULL,
+        device_filter, &IID_IAMCrossbar, (void **) &cross_bar);
+    if (hr != S_OK)
+        /* no crossbar found */
+        return hr;
+
+    if (cross_bar_base_filter)
+        hr = IAMCrossbar_QueryInterface(cross_bar, &IID_IBaseFilter, (void**)cross_bar_base_filter);
+
+    return hr;
+}
+
+HRESULT
+ff_dshow_get_tvtuner_and_filter(ICaptureGraphBuilder2 *graph_builder2, IBaseFilter *device_filter,
+    IAMTVTuner *tv_tuner_filter, IBaseFilter *tv_tuner_base_filter)
+{
+    HRESULT hr = ICaptureGraphBuilder2_FindInterface(graph_builder2, &LOOK_UPSTREAM_ONLY, NULL,
+        device_filter, &IID_IAMTVTuner, (void **) &tv_tuner_filter);
+    if (hr == S_OK)
+        hr = IAMCrossbar_QueryInterface(tv_tuner_filter, &IID_IBaseFilter, (void **) &tv_tuner_base_filter);
+    return hr;
+}
+
+HRESULT
+ff_dshow_get_audiomixer_and_filter(ICaptureGraphBuilder2 *graph_builder2, IBaseFilter *device_filter,
+    IAMAudioInputMixer *tv_audio_filter, IBaseFilter *tv_audio_base_filter)
+{
+    HRESULT hr = ICaptureGraphBuilder2_FindInterface(graph_builder2, &LOOK_UPSTREAM_ONLY, NULL,
+        device_filter, &IID_IAMTVAudio, (void **) &tv_audio_filter);
+    if (hr == S_OK)
+        hr = IAMCrossbar_QueryInterface(tv_audio_filter, &IID_IBaseFilter, (void **) &tv_audio_base_filter);
+    return hr;
+}
+
 /**
  * Given a fully constructed graph, check if there is a cross bar filter, and configure its pins if so.
  */
@@ -140,55 +178,42 @@ HRESULT
 ff_dshow_try_setup_crossbar_options(ICaptureGraphBuilder2 *graph_builder2,
     IBaseFilter *device_filter, enum dshowDeviceType devtype, AVFormatContext *avctx)
 {
-    struct dshow_ctx *ctx = avctx->priv_data;
-    IAMCrossbar *cross_bar = NULL;
-    IBaseFilter *cross_bar_base_filter = NULL;
-    IAMTVTuner *tv_tuner_filter = NULL;
-    IBaseFilter *tv_tuner_base_filter = NULL;
-    IAMAudioInputMixer *tv_audio_filter = NULL;
-    IBaseFilter *tv_audio_base_filter = NULL;
+    struct dshow_ctx    *ctx = avctx->priv_data;
+    IAMCrossbar         *cross_bar              = NULL;
+    IBaseFilter         *cross_bar_base_filter  = NULL;
+    IAMTVTuner          *tv_tuner_filter        = NULL;
+    IBaseFilter         *tv_tuner_base_filter   = NULL;
+    IAMAudioInputMixer  *tv_audio_filter        = NULL;
+    IBaseFilter         *tv_audio_base_filter   = NULL;
     HRESULT hr;
+    int should_show_crossbar_properties = (devtype == VideoDevice) ? ctx->show_video_crossbar_connection_dialog : ctx->show_audio_crossbar_connection_dialog;
 
-    hr = ICaptureGraphBuilder2_FindInterface(graph_builder2, &LOOK_UPSTREAM_ONLY, (const GUID *) NULL,
-            device_filter, &IID_IAMCrossbar, (void**) &cross_bar);
+    hr = ff_dshow_get_crossbar_and_filter(graph_builder2, device_filter, cross_bar, should_show_crossbar_properties ? &cross_bar_base_filter : NULL);
     if (hr != S_OK) {
-        /* no crossbar found */
-        hr = S_OK;
+        if (!cross_bar)
+            /* no crossbar found */
+            hr = S_OK;
         goto end;
     }
+
     /* TODO some TV tuners apparently have multiple crossbars? */
 
-    if (devtype == VideoDevice && ctx->show_video_crossbar_connection_dialog ||
-        devtype == AudioDevice && ctx->show_audio_crossbar_connection_dialog) {
-        hr = IAMCrossbar_QueryInterface(cross_bar, &IID_IBaseFilter, (void **) &cross_bar_base_filter);
-        if (hr != S_OK)
-            goto end;
+    if (should_show_crossbar_properties && cross_bar_base_filter)
         ff_dshow_show_filter_properties(cross_bar_base_filter, avctx);
-    }
 
     if (devtype == VideoDevice && ctx->show_analog_tv_tuner_dialog) {
-        hr = ICaptureGraphBuilder2_FindInterface(graph_builder2, &LOOK_UPSTREAM_ONLY, NULL,
-             device_filter, &IID_IAMTVTuner, (void**) &tv_tuner_filter);
-        if (hr == S_OK) {
-            hr = IAMCrossbar_QueryInterface(tv_tuner_filter, &IID_IBaseFilter, (void **) &tv_tuner_base_filter);
-            if (hr != S_OK)
-                goto end;
+        hr = ff_dshow_get_tvtuner_and_filter(graph_builder2, device_filter, tv_tuner_filter, tv_tuner_base_filter);
+        if (hr == S_OK && tv_tuner_base_filter)
             ff_dshow_show_filter_properties(tv_tuner_base_filter, avctx);
-        } else {
+        else
             av_log(avctx, AV_LOG_WARNING, "unable to find a tv tuner to display dialog for!");
-        }
     }
     if (devtype == AudioDevice && ctx->show_analog_tv_tuner_audio_dialog) {
-        hr = ICaptureGraphBuilder2_FindInterface(graph_builder2, &LOOK_UPSTREAM_ONLY, NULL,
-             device_filter, &IID_IAMTVAudio, (void**) &tv_audio_filter);
-        if (hr == S_OK) {
-            hr = IAMCrossbar_QueryInterface(tv_audio_filter, &IID_IBaseFilter, (void **) &tv_audio_base_filter);
-            if (hr != S_OK)
-                goto end;
+        hr = ff_dshow_get_audiomixer_and_filter(graph_builder2, device_filter, tv_audio_filter, tv_audio_base_filter);
+        if (hr == S_OK && tv_audio_base_filter)
             ff_dshow_show_filter_properties(tv_audio_base_filter, avctx);
-        } else {
+        else
             av_log(avctx, AV_LOG_WARNING, "unable to find a tv audio tuner to display dialog for!");
-        }
     }
 
     hr = setup_crossbar_options(cross_bar, devtype, avctx);
