@@ -933,6 +933,7 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
         AVOptionRange *new_range[3] = { NULL };
         int nb_range = 0;
         struct dshow_format_info *fmt_info = NULL;
+        
         r = IAMStreamConfig_GetStreamCaps(config, i, &type, (void *) caps);
         if (r != S_OK)
             goto next;
@@ -1558,7 +1559,8 @@ dshow_open_device(AVFormatContext *avctx, ICreateDevEnum *devenum,
             goto error;
         }
     }
-        if (ctx->device_filter[otherDevType]) {
+
+    if (ctx->device_filter[otherDevType]) {
         // avoid adding add two instances of the same device to the graph, one for video, one for audio
         // a few devices don't support this (could also do this check earlier to avoid double crossbars, etc. but they seem OK)
         if (strcmp(device_filter_unique_name, ctx->device_unique_name[otherDevType]) == 0) {
@@ -2441,16 +2443,16 @@ static const AVClass dshow_class = {
 };
 
 const AVInputFormat ff_dshow_demuxer = {
-    .name           = "dshow",
-    .long_name      = NULL_IF_CONFIG_SMALL("DirectShow capture"),
-    .priv_data_size = sizeof(struct dshow_ctx),
-    .read_header    = dshow_read_header,
-    .read_packet    = dshow_read_packet,
-    .read_close     = dshow_read_close,
-    .get_device_list= dshow_get_device_list,
-    .control_message= dshow_control_message,
+    .name                       = "dshow",
+    .long_name                  = NULL_IF_CONFIG_SMALL("DirectShow capture"),
+    .priv_data_size             = sizeof(struct dshow_ctx),
+    .read_header                = dshow_read_header,
+    .read_packet                = dshow_read_packet,
+    .read_close                 = dshow_read_close,
+    .get_device_list            = dshow_get_device_list,
+    .control_message            = dshow_control_message,
     .create_device_capabilities = dshow_create_device_capabilities,
-    .free_device_capabilities = dshow_free_device_capabilities,
-    .flags          = AVFMT_NOFILE | AVFMT_NOBINSEARCH | AVFMT_NOGENSEARCH | AVFMT_NO_BYTE_SEEK,
-    .priv_class     = &dshow_class,
+    .free_device_capabilities   = dshow_free_device_capabilities,
+    .flags                      = AVFMT_NOFILE | AVFMT_NOBINSEARCH | AVFMT_NOGENSEARCH | AVFMT_NO_BYTE_SEEK,
+    .priv_class                 = &dshow_class,
 };
