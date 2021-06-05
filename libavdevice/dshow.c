@@ -79,6 +79,26 @@ static enum AVPixelFormat dshow_pixfmt(DWORD biCompression, WORD biBitCount)
     return avpriv_pix_fmt_find(PIX_FMT_LIST_RAW, biCompression); // all others
 }
 
+static enum AVCodecID waveform_codec_id(enum AVSampleFormat sample_fmt)
+{
+    switch (sample_fmt) {
+    case AV_SAMPLE_FMT_U8:  return AV_CODEC_ID_PCM_U8;
+    case AV_SAMPLE_FMT_S16: return AV_CODEC_ID_PCM_S16LE;
+    case AV_SAMPLE_FMT_S32: return AV_CODEC_ID_PCM_S32LE;
+    default:                return AV_CODEC_ID_NONE; /* Should never happen. */
+    }
+}
+
+static enum AVSampleFormat sample_fmt_bits_per_sample(int bits)
+{
+    switch (bits) {
+    case 8:  return AV_SAMPLE_FMT_U8;
+    case 16: return AV_SAMPLE_FMT_S16;
+    case 32: return AV_SAMPLE_FMT_S32;
+    default: return AV_SAMPLE_FMT_NONE; /* Should never happen. */
+    }
+}
+
 static enum AVColorRange dshow_color_range(DXVA2_ExtendedFormat *fmt_info)
 {
     switch (fmt_info->NominalRange)
@@ -1608,26 +1628,6 @@ static int dshow_control_message(AVFormatContext *avctx, int type, void *data, s
     }
 
     return ret;
-}
-
-static enum AVCodecID waveform_codec_id(enum AVSampleFormat sample_fmt)
-{
-    switch (sample_fmt) {
-    case AV_SAMPLE_FMT_U8:  return AV_CODEC_ID_PCM_U8;
-    case AV_SAMPLE_FMT_S16: return AV_CODEC_ID_PCM_S16LE;
-    case AV_SAMPLE_FMT_S32: return AV_CODEC_ID_PCM_S32LE;
-    default:                return AV_CODEC_ID_NONE; /* Should never happen. */
-    }
-}
-
-static enum AVSampleFormat sample_fmt_bits_per_sample(int bits)
-{
-    switch (bits) {
-    case 8:  return AV_SAMPLE_FMT_U8;
-    case 16: return AV_SAMPLE_FMT_S16;
-    case 32: return AV_SAMPLE_FMT_S32;
-    default: return AV_SAMPLE_FMT_NONE; /* Should never happen. */
-    }
 }
 
 static int
