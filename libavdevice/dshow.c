@@ -264,14 +264,18 @@ dshow_read_close(AVFormatContext *s)
         ICaptureGraphBuilder2_Release(ctx->graph_builder2[VideoDevice]);
     if (ctx->graph_builder2[AudioDevice])
         ICaptureGraphBuilder2_Release(ctx->graph_builder2[AudioDevice]);
+    ctx->graph_builder2[0] = NULL;
+    ctx->graph_builder2[1] = NULL;
 
     if (ctx->control) {
         IMediaControl_Stop(ctx->control);
         IMediaControl_Release(ctx->control);
     }
+    ctx->control = NULL;
 
     if (ctx->media_event)
         IMediaEvent_Release(ctx->media_event);
+    ctx->media_event = NULL;
 
     if (ctx->graph) {
         IEnumFilters *fenum;
@@ -289,25 +293,34 @@ dshow_read_close(AVFormatContext *s)
             IEnumFilters_Release(fenum);
         }
         IGraphBuilder_Release(ctx->graph);
+        ctx->graph = NULL;
     }
 
     if (ctx->capture_pin[VideoDevice])
         ff_dshow_pin_Release(ctx->capture_pin[VideoDevice]);
     if (ctx->capture_pin[AudioDevice])
         ff_dshow_pin_Release(ctx->capture_pin[AudioDevice]);
+    ctx->capture_pin[0] = NULL;
+    ctx->capture_pin[1] = NULL;
     if (ctx->capture_filter[VideoDevice])
         ff_dshow_filter_Release(ctx->capture_filter[VideoDevice]);
     if (ctx->capture_filter[AudioDevice])
         ff_dshow_filter_Release(ctx->capture_filter[AudioDevice]);
+    ctx->capture_filter[0] = NULL;
+    ctx->capture_filter[1] = NULL;
 
     if (ctx->device_pin[VideoDevice])
         IPin_Release(ctx->device_pin[VideoDevice]);
     if (ctx->device_pin[AudioDevice])
         IPin_Release(ctx->device_pin[AudioDevice]);
+    ctx->device_pin[0] = NULL;
+    ctx->device_pin[1] = NULL;
     if (ctx->device_filter[VideoDevice])
         IBaseFilter_Release(ctx->device_filter[VideoDevice]);
     if (ctx->device_filter[AudioDevice])
         IBaseFilter_Release(ctx->device_filter[AudioDevice]);
+    ctx->device_filter[0] = NULL;
+    ctx->device_filter[1] = NULL;
 
     av_freep(&ctx->device_name[0]);
     av_freep(&ctx->device_name[1]);
@@ -316,10 +329,13 @@ dshow_read_close(AVFormatContext *s)
 
     if(ctx->mutex)
         CloseHandle(ctx->mutex);
+    ctx->mutex = NULL;
     if(ctx->event[0])
         CloseHandle(ctx->event[0]);
     if(ctx->event[1])
         CloseHandle(ctx->event[1]);
+    ctx->event[0] = NULL;
+    ctx->event[1] = NULL;
 
     pktl = ctx->pktl;
     while (pktl) {
@@ -328,6 +344,7 @@ dshow_read_close(AVFormatContext *s)
         av_free(pktl);
         pktl = next;
     }
+    ctx->pktl = NULL;
 
     CoUninitialize();
 
