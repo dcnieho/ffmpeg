@@ -58,4 +58,35 @@ struct AVDeviceCapabilitiesQuery {
  */
 extern const AVOption ff_device_capabilities[];
 
+/**
+ * Enumeration indicating which device capability is being queried.
+ */
+enum AVDeviceCapabilitiesQueryType {
+    AV_DEV_CAP_QUERY_NONE = 0,
+    // both audio and video
+    AV_DEV_CAP_QUERY_CODEC,
+    // audio
+    AV_DEV_CAP_QUERY_SAMPLE_FORMAT,
+    AV_DEV_CAP_QUERY_SAMPLE_RATE,
+    AV_DEV_CAP_QUERY_CHANNELS,
+    AV_DEV_CAP_QUERY_CHANNEL_LAYOUT,
+    // video
+    AV_DEV_CAP_QUERY_PIXEL_FORMAT,
+    AV_DEV_CAP_QUERY_WINDOW_SIZE,
+    AV_DEV_CAP_QUERY_FRAME_SIZE,
+    AV_DEV_CAP_QUERY_FPS
+};
+
+/**
+ * Find AVDeviceCapabilitiesQueryType enumeration by means of options name.
+ * Returns AV_DEV_CAP_QUERY_NONE if not found.
+ */
+enum AVDeviceCapabilitiesQueryType ff_device_get_query_type(const char* option_name);
+
+/**
+ * Get component name from AVDeviceCapabilitiesQueryType enumeration and component index.
+ * (Some options have multiple components, e.g. AV_DEV_CAP_QUERY_FRAME_SIZE).
+ */
+const char* ff_device_get_query_component_name(enum AVDeviceCapabilitiesQueryType query_type, int component);
+
 #endif

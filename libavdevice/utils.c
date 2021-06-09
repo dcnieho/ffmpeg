@@ -19,6 +19,7 @@
 #include "internal.h"
 #include "libavutil/opt.h"
 #include "libavformat/avformat.h"
+#include "libavutil/avassert.h"
 
 int ff_alloc_input_device_context(AVFormatContext **avctx, const AVInputFormat *iformat, const char *format)
 {
@@ -56,4 +57,51 @@ int ff_alloc_input_device_context(AVFormatContext **avctx, const AVInputFormat *
   error:
     avformat_free_context(s);
     return ret;
+}
+
+typedef struct AVDeviceCapabilitiesQueryTypeEntry {
+    const char*                         name;
+    enum AVDeviceCapabilitiesQueryType  query_type;
+} AVDeviceCapabilitiesQueryTypeEntry;
+
+static const AVDeviceCapabilitiesQueryTypeEntry query_table[] = {
+    // both audio and video
+    { "codec",          AV_DEV_CAP_QUERY_CODEC },
+    // audio
+    { "sample_format",  AV_DEV_CAP_QUERY_SAMPLE_FORMAT },
+    { "sample_rate",    AV_DEV_CAP_QUERY_SAMPLE_RATE },
+    { "channels",       AV_DEV_CAP_QUERY_CHANNELS },
+    { "channel_layout", AV_DEV_CAP_QUERY_CHANNEL_LAYOUT },
+    // video
+    { "pixel_format",   AV_DEV_CAP_QUERY_PIXEL_FORMAT },
+    { "frame_size",     AV_DEV_CAP_QUERY_FRAME_SIZE },
+    { "window_size",    AV_DEV_CAP_QUERY_WINDOW_SIZE },
+    { "fps",            AV_DEV_CAP_QUERY_FPS },
+};
+
+enum AVDeviceCapabilitiesQueryType ff_device_get_query_type(const char* option_name)
+{
+    for (int i = 0; i < FF_ARRAY_ELEMS(query_table); ++i) {
+        if (!strcmp(query_table[i].name, option_name))
+            return query_table[i].query_type;
+    }
+    // not found
+    return AV_DEV_CAP_QUERY_NONE;
+}
+
+const char* ff_device_get_query_component_name(enum AVDeviceCapabilitiesQueryType query_type, int component)
+{
+    if (query_type == AV_DEV_CAP_QUERY_WINDOW_SIZE || query_type == AV_DEV_CAP_QUERY_FRAME_SIZE) {
+        // special case: different name for each component
+        return component == 0 ? "pixel_count" : (component == 1 ? "width" : (component == 2 ? "height" : ""));
+    }
+    else {
+        av_assert0(component == 0);
+        for (int i = 0; i < FF_ARRAY_ELEMS(query_table); ++i) {
+            if (query_table[i].query_type == query_type)
+                return query_table[i].name;
+        }
+    }
+    // not found
+    return NULL;
 }
