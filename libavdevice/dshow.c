@@ -1508,6 +1508,7 @@ static int dshow_control_message(AVFormatContext *avctx, int type, void *data, s
     struct dshow_ctx *ctx = avctx->priv_data;
     int run_state = ctx->is_running;
     HRESULT hr;
+    int ret = 0;
 
     switch (type) {
     case AV_APP_TO_DEV_PAUSE:
@@ -1519,6 +1520,32 @@ static int dshow_control_message(AVFormatContext *avctx, int type, void *data, s
     case AV_APP_TO_DEV_TOGGLE_PAUSE:
         run_state = !run_state;
         break;
+    case AV_APP_TO_DEV_CONFIG: {
+        /* For documentation of dialog variable, see ffmpeg-devices.html in docs */
+        int dialog;
+        enum dshowDeviceType devtype;
+        
+        if (!data)
+            av_log(avctx, AV_LOG_ERROR, "Use the data argument to indicate which dialog should be shown.");
+        dialog = *(int *) data;
+        devtype = (dialog & 1) ? AudioDevice : VideoDevice;
+        
+        if (dialog & 1<<1) {
+            // device_dialog
+            if (ctx->device_filter[devtype])
+                ff_dshow_show_filter_properties(ctx->device_filter[devtype], avctx);
+        } else if (dialog & 1<<2) {
+            // crossbar_connection_dialog
+            // TODO
+        } else if (dialog & 1<<3) {
+            // tv_tuner_dialog
+            // TODO
+        }
+        break;
+    }
+
+    default:
+        ret = AVERROR(ENOSYS);
     }
 
     // if play state change requested, apply
@@ -1539,7 +1566,7 @@ static int dshow_control_message(AVFormatContext *avctx, int type, void *data, s
         ctx->is_running = run_state;
     }
 
-    return 0;
+    return ret;
 }
 
 static enum AVCodecID waveform_codec_id(enum AVSampleFormat sample_fmt)
