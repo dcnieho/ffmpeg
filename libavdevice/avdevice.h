@@ -206,6 +206,16 @@ enum AVAppToDevMessageType {
      */
     AV_APP_TO_DEV_GET_VOLUME = MKBETAG('G', 'V', 'O', 'L'),
     AV_APP_TO_DEV_GET_MUTE   = MKBETAG('G', 'M', 'U', 'T'),
+
+    /**
+     * Request to show configuration dialog.
+     * 
+     * If device has a configuration dialog of type indicated by
+     * data, show it.
+     * 
+     * data: int (device-specific).
+     */
+    AV_APP_TO_DEV_CONFIG = MKBETAG('C', 'O', 'N', 'F'),
 };
 
 /**

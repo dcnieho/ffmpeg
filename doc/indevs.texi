@@ -682,6 +682,40 @@ $ ffmpeg -f dshow -show_video_device_dialog true -crossbar_video_input_pin_numbe
 
 @end itemize
 
+@subsection Libavdevice user notes
+
+The dshow device supports the @code{avdevice_app_to_dev_control_message}
+interface.
+
+It understands the @code{AV_APP_TO_DEV_PAUSE}, @code{AV_APP_TO_DEV_PLAY}
+and @code{AV_APP_TO_DEV_TOGGLE_PAUSE} commands, which respective stop and
+start whether data is captured from the connected device, and toggle
+capture state.
+
+It furthermore understands the @code{AV_APP_TO_DEV_CONFIG} message, which
+requests the device to show a configuration dialog (if available). An
+@code{int} should be passed along with this command to indicate which
+configuration dialog should be shown. The bits in this @code{int} have
+the following meaning:
+
+@itemize @bullet
+@item
+1st bit: If set, the dialog for the audio device will be shown. If not set
+the dialog for the video device will be shown.
+
+@item
+2nd bit: If set, show property dialog for the audio or video capture device,
+allowing to change audio or video filter properties and configurations
+manually.
+
+@item
+3rd bit: If set, show property dialog where crossbar pin routings of the
+audio/video device can be manually modified.
+
+@item
+4th bit: If set, show property dialog where TV channels and frequencies can be manually modified (in case of video device), or TV audio (like mono vs. stereo, Language A, B or C) can be manually modified in case of audio device.
+@end itemize
+
 @section fbdev
 
 Linux framebuffer input device.
