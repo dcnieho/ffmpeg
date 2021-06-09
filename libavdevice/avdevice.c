@@ -76,11 +76,14 @@ int avdevice_capabilities_create(AVDeviceCapabilitiesQuery **caps, AVFormatConte
                                  AVDictionary **device_options)
 {
     int ret;
-    av_assert0(s && caps);
+    av_assert0(s);
+    av_assert0(caps);
     av_assert0(s->iformat || s->oformat);
     if ((s->oformat && !s->oformat->create_device_capabilities) ||
-        (s->iformat && !s->iformat->create_device_capabilities))
+        (s->iformat && !s->iformat->create_device_capabilities)) {
+        *caps = NULL;
         return AVERROR(ENOSYS);
+    }
     *caps = av_mallocz(sizeof(**caps));
     if (!(*caps))
         return AVERROR(ENOMEM);
