@@ -316,6 +316,11 @@ typedef struct AVOptionRange {
      * Value range.
      * For string ranges this represents the min/max length.
      * For dimensions this represents the min/max pixel count or width/height in multi-component case.
+     * If value_min  < value_max, the struct encodes a range.
+     * If value_min == value_max, the struct encodes a single value.
+     * If value_min  > value_max, the range is empty (a value is not available).
+     *                            Good sentinel values to use when a range is empty
+     *                            are value_min=0, value_max=-1, but this is not required.
      */
     double value_min, value_max;
     /**

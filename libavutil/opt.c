@@ -1979,9 +1979,9 @@ int av_opt_query_ranges_default(AVOptionRanges **ranges_arg, void *obj, const ch
     ranges->range[0] = range;
     ranges->nb_ranges = 1;
     ranges->nb_components = 1;
-    range->is_range = 1;
     range->value_min = field->min;
     range->value_max = field->max;
+    range->is_range = field->max > field->min;
 
     switch (field->type) {
     case AV_OPT_TYPE_BOOL:
