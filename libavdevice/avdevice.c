@@ -17,6 +17,12 @@
  */
 
 #include "libavutil/avassert.h"
+#include "libavutil/samplefmt.h"
+#include "libavutil/pixfmt.h"
+#include "libavutil/pixdesc.h"
+#include "libavutil/avutil.h"
+#include "libavcodec/codec_id.h"
+#include "libavformat/version.h"
 #include "avdevice.h"
 #include "internal.h"
 
@@ -102,6 +108,83 @@ int avdevice_capabilities_create(AVDeviceCapabilitiesQuery **caps, AVFormatConte
   fail:
     av_freep(caps);
     return ret;
+}
+
+static const AVClass avdevice_capabilities_context_class = {
+    .class_name = "AVDeviceCapabilitiesQuery",
+    .item_name = av_default_item_name,
+    .option = ff_device_capabilities,
+    .version = LIBAVUTIL_VERSION_INT
+};
+
+const AVClass *avdevice_capabilities_get_class(void)
+{
+    return &avdevice_capabilities_context_class;
+}
+
+int avdevice_capabilities_bprint_num(AVBPrint *bp, const char *name, double val)
+{
+    int opt_type_set = 0, is_codec = 0;
+    enum AVOptionType type;  // will be set below, opt_type_set tracks if has been set
+    const AVClass *cap_class = avdevice_capabilities_get_class();
+
+    // may fail, e.g. if name of a component of a multi-component option was provided as input
+    const AVOption *field = av_opt_find(&cap_class, name, NULL, 0, AV_OPT_SEARCH_FAKE_OBJ);
+    if (field) {
+        type = field->type;
+        opt_type_set = 1;
+    }
+
+    // based on name, a type override or other extra info may be needed
+    if (opt_type_set && type==AV_OPT_TYPE_INT && strcmp(name, "codec")==0)
+        is_codec = 1;
+    // next three are for the three components of a AV_OPT_TYPE_IMAGE_SIZE
+    // NB: these wont be found by av_opt_find above
+    else if (
+        strcmp(name, ff_device_get_query_component_name(AV_DEV_CAP_QUERY_WINDOW_SIZE, 0))==0 ||
+        strcmp(name, ff_device_get_query_component_name(AV_DEV_CAP_QUERY_WINDOW_SIZE, 1))==0 ||
+        strcmp(name, ff_device_get_query_component_name(AV_DEV_CAP_QUERY_WINDOW_SIZE, 2))==0
+        ) {
+        type = AV_OPT_TYPE_INT;
+        opt_type_set = 1;
+    }
+
+    // now, format if type set, else error
+    if (!opt_type_set) {
+        av_log(NULL, AV_LOG_ERROR, "A device capability with the name '%s' is not known\n", name);
+        return AVERROR_OPTION_NOT_FOUND;
+    }
+
+    switch (type)
+    {
+    case AV_OPT_TYPE_INT:
+    {
+        int temp = lrint(val);
+        if (is_codec)
+            av_bprintf(bp, "%s", (char *)avcodec_get_name((enum AVCodecID)lrint(val)));
+        else
+            av_bprintf(bp, "%d", temp);
+        break;
+    }
+    case AV_OPT_TYPE_PIXEL_FMT:
+        av_bprintf(bp, "%s", (char *)av_x_if_null(av_get_pix_fmt_name((enum AVPixelFormat)lrint(val)), "none"));
+        break;
+    case AV_OPT_TYPE_SAMPLE_FMT:
+        av_bprintf(bp, "%s", (char *)av_x_if_null(av_get_sample_fmt_name((enum AVSampleFormat)lrint(val)), "none"));
+        break;
+    case AV_OPT_TYPE_DOUBLE:
+        av_bprintf(bp, "%f", val);
+        break;
+    case AV_OPT_TYPE_CHANNEL_LAYOUT:
+        av_bprintf(bp, "0x%"PRIx64, llrint(val));
+        break;
+
+    default:
+        av_log(NULL, AV_LOG_ERROR, "avdevice_capabilities_bprint_num is not implemented for this option type\n", name);
+        return AVERROR_PATCHWELCOME;
+    }
+
+    return 0;
 }
 
 void avdevice_capabilities_free(AVDeviceCapabilitiesQuery **caps, AVFormatContext *s)

@@ -64,6 +64,7 @@
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
 #include "libavutil/dict.h"
+#include "libavutil/bprint.h"
 #include "libavformat/avformat.h"
 
 /**
@@ -419,6 +420,16 @@ int avdevice_dev_to_app_control_message(struct AVFormatContext *s,
 typedef struct AVDeviceCapabilitiesQuery AVDeviceCapabilitiesQuery;
 
 /**
+ * Get the AVClass for AVDeviceCapabilitiesQuery. It can be used
+ * in combination with AV_OPT_SEARCH_FAKE_OBJ for examining
+ * which capabilities can be queried through the
+ * AVDeviceCapabilitiesQuery API.
+ *
+ * @see av_opt_find(), av_opt_next().
+ */
+const AVClass *avdevice_capabilities_get_class(void);
+
+/**
  * Initialize capabilities probing API based on AVOption API.
  *
  * avdevice_capabilities_free() must be called when query capabilities API is
@@ -437,6 +448,22 @@ typedef struct AVDeviceCapabilitiesQuery AVDeviceCapabilitiesQuery;
  */
 int avdevice_capabilities_create(AVDeviceCapabilitiesQuery **caps, AVFormatContext *s,
                                  AVDictionary **device_options);
+
+/**
+ * Format a capabilities value as string and append to a bprint buffer.
+ * @param  bp A buffer to which the output string will be
+ *         appended.
+ * @param  name Name of the option to print (provide
+ *         AVOptionRange.str).
+ * @param  val An capabilities value represented as a
+ *         double (e.g. min_value or max_value of
+ *         AVOptionRange)
+ * @return 0 on success, a negative error code otherwise. Even if
+ * return value indicates success, the state of the bp variable
+ * should also be checked, as it may have experienced memory allocation
+ * trouble.
+ */
+int avdevice_capabilities_bprint_num(AVBPrint *bp, const char *name, double val);
 
 /**
  * Free resources created by avdevice_capabilities_create()
