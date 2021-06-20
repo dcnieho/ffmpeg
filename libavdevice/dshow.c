@@ -27,6 +27,7 @@
 #include "libavformat/internal.h"
 #include "libavformat/riff.h"
 #include "avdevice.h"
+#include "internal.h"
 #include "libavcodec/raw.h"
 #include "objidl.h"
 #include "shlwapi.h"
@@ -830,11 +831,15 @@ static void dshow_get_default_format(IPin *pin, IAMStreamConfig *config, enum ds
  * try to set parameters specified through AVOptions, or the pin's
  * default format if no such parameters were set. If successful,
  * return 1 in *pformat_set.
- * If pformat_set is NULL, list all pin capabilities.
+ * If pformat_set is NULL or the ranges input is not NULL, list all
+ * pin capabilities.
+ * When listing pin capabilities, if ranges is NULL, output to log,
+ * else store capabilities in ranges.
  */
 static void
 dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
-                    IPin *pin, int *pformat_set)
+                    IPin *pin, int *pformat_set,
+                    AVOptionRanges *ranges, enum AVDeviceCapabilitiesQueryType query_type)
 {
     struct dshow_ctx *ctx = avctx->priv_data;
     IAMStreamConfig *config = NULL;
@@ -878,7 +883,7 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
      *    one, with most info exposed (see comment below).
      */
     use_default = !dshow_should_set_format(avctx, devtype);
-    if (use_default && pformat_set)
+    if (use_default && pformat_set && !ranges)
     {
         // get default
         dshow_get_default_format(pin, config, devtype, &type);
@@ -924,7 +929,9 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
     // exposes contains a VIDEOINFOHEADER2. Fall back to the VIDEOINFOHEADER
     // format if no corresponding VIDEOINFOHEADER2 is found when we finish
     // iterating.
-    for (i = 0; i < n && !format_set; i++) {
+    for (i = 0; i < n && (!format_set || ranges); i++) {
+        AVOptionRange *new_range[3] = { NULL };
+        int nb_range = 0;
         struct dshow_format_info *fmt_info = NULL;
         r = IAMStreamConfig_GetStreamCaps(config, i, &type, (void *) caps);
         if (r != S_OK)
@@ -960,7 +967,7 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
                 wait_for_better = 0;
             }
 
-            if (!pformat_set) {
+            if (!pformat_set && !ranges) {
                 const char *chroma = av_chroma_location_name(fmt_info->chroma_loc);
                 if (fmt_info->pix_fmt == AV_PIX_FMT_NONE) {
                     const AVCodec *codec = avcodec_find_decoder(fmt_info->codec_id);
@@ -1024,10 +1031,64 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
                 bih->biWidth  = requested_width;
                 bih->biHeight = requested_height;
             }
+
+            if (ranges) {
+                for (int j = 0; j < ranges->nb_components; j++) {
+                    new_range[j] = av_mallocz(sizeof(**new_range));
+                    if (!new_range[j])
+                        goto next;
+                    new_range[j]->value_max = -1.;  // init (min:0, max:-1 means value not set)
+                    ++nb_range;
+
+                    switch (query_type)
+                    {
+                    case AV_DEV_CAP_QUERY_CODEC:
+                        if (dshow_pixfmt(bih->biCompression, bih->biBitCount) == AV_PIX_FMT_NONE) {
+                            const AVCodecTag *const tags[] = { avformat_get_riff_video_tags(), NULL };
+                            new_range[j]->value_min = av_codec_get_id(tags, bih->biCompression);
+                        }
+                        else
+                            new_range[j]->value_min = AV_CODEC_ID_RAWVIDEO;
+                        new_range[j]->value_max = new_range[j]->value_min;
+                        break;
+                    case AV_DEV_CAP_QUERY_PIXEL_FORMAT:
+                        new_range[j]->value_min = new_range[j]->value_max = dshow_pixfmt(bih->biCompression, bih->biBitCount);
+                        new_range[j]->value_min;
+                        break;
+                    case AV_DEV_CAP_QUERY_FRAME_SIZE:
+                    {
+                        switch (j)
+                        {
+                        case 0:
+                            new_range[j]->value_min = vcaps->MinOutputSize.cx * vcaps->MinOutputSize.cy;
+                            new_range[j]->value_max = vcaps->MaxOutputSize.cx * vcaps->MaxOutputSize.cy;
+                            break;
+                        case 1:
+                            new_range[j]->value_min = vcaps->MinOutputSize.cx;
+                            new_range[j]->value_max = vcaps->MaxOutputSize.cx;
+                            break;
+                        case 2:
+                            new_range[j]->value_min = vcaps->MinOutputSize.cy;
+                            new_range[j]->value_max = vcaps->MaxOutputSize.cy;
+                            break;
+                        }
+                        break;
+                    }
+                    case AV_DEV_CAP_QUERY_FPS:
+                        new_range[j]->value_min = 1e7 / vcaps->MaxFrameInterval;
+                        new_range[j]->value_max = 1e7 / vcaps->MinFrameInterval;
+                        break;
+
+                    // default:
+                    // an audio property is being queried, output all fields 0 (mallocz above) is fine
+                    }
+                }
+            }
+
         } else {
             WAVEFORMATEX *fx;
-#if DSHOWDEBUG
             AUDIO_STREAM_CONFIG_CAPS *acaps = caps;
+#if DSHOWDEBUG
             ff_print_AUDIO_STREAM_CONFIG_CAPS(acaps);
 #endif
             if (IsEqualGUID(&type->formattype, &FORMAT_WaveFormatEx)) {
@@ -1035,7 +1096,7 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
             } else {
                 goto next;
             }
-            if (!pformat_set) {
+            if (!pformat_set && !ranges) {
                 av_log(
                     avctx,
                     AV_LOG_INFO,
@@ -1051,15 +1112,69 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
             ) {
                 goto next;
             }
+
+            if (ranges) {
+                for (int j = 0; j < ranges->nb_components; j++) {
+                    new_range[j] = av_mallocz(sizeof(**new_range));
+                    if (!new_range[j])
+                        goto next;
+                    new_range[j]->value_max = -1.;  // init (min:0, max:-1 means value not set)
+                    ++nb_range;
+
+                    switch (query_type)
+                    {
+                    case AV_DEV_CAP_QUERY_SAMPLE_FORMAT:
+                        new_range[j]->value_min = sample_fmt_bits_per_sample(acaps->MinimumBitsPerSample);
+                        new_range[j]->value_max = sample_fmt_bits_per_sample(acaps->MaximumBitsPerSample);
+                        break;
+                    case AV_DEV_CAP_QUERY_SAMPLE_RATE:
+                        new_range[j]->value_min = acaps->MinimumSampleFrequency;
+                        new_range[j]->value_max = acaps->MaximumSampleFrequency;
+                        break;
+                    case AV_DEV_CAP_QUERY_CHANNELS:
+                        new_range[j]->value_min = acaps->MinimumChannels;
+                        new_range[j]->value_max = acaps->MaximumChannels;
+                        break;
+
+                    // default:
+                    // a video property is being queried, output all fields 0 (mallocz above) is fine
+                    // NB: this is a for-loop since some of the video queries are multi-component
+                    // and all components should be set
+                    }
+                }
+            }
         }
 
         // found a matching format. Either apply or store
         // for safekeeping if we might maybe find a better
         // format with more info attached to it (see comment
-        // above loop)
-        if (!wait_for_better) {
+        // above loop). If storing all capabilities of device
+        // in ranges, try to apply in all cases, and store
+        // caps if successfully applied
+        if (!wait_for_better || ranges) {
             if (IAMStreamConfig_SetFormat(config, type) != S_OK)
                 goto next;
+            else if (ranges) {
+                // format matched and could be set successfully.
+                // fill in some fields for each capability
+                for (int j = 0; j < nb_range; j++) {
+                    new_range[j]->str = av_strdup(ff_device_get_query_component_name(query_type, j));
+                    if (!new_range[j]->str)
+                        goto next;
+                    new_range[j]->is_range = new_range[j]->value_min < new_range[j]->value_max;
+                }
+
+                // store to ranges output
+                if (av_reallocp_array(&ranges->range,
+                                      ranges->nb_ranges * ranges->nb_components + nb_range * ranges->nb_components,
+                                      sizeof(*ranges->range)) < 0)
+                    goto next;
+                for (int j = 0; j < nb_range; ++j) {
+                    ranges->range[ranges->nb_ranges] = new_range[j];
+                    ranges->nb_ranges++;
+                    new_range[j] = NULL;  // copied into array, make sure not freed below
+                }
+            }
             format_set = 1;
         }
         else if (!previous_match_type) {
@@ -1070,6 +1185,12 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
         }
 next:
         av_freep(&fmt_info);
+        for (int j = 0; j < nb_range; ++j) {
+            if (new_range[j]) {
+                av_freep(&new_range[j]->str);
+                av_freep(&new_range[j]);
+            }
+        }
         if (type && type->pbFormat)
             CoTaskMemFree(type->pbFormat);
         CoTaskMemFree(type);
@@ -1209,10 +1330,13 @@ end:
  * devtype, retrieve the first output pin and return the pointer to the
  * object found in *ppin.
  * If ppin is NULL, cycle through all pins listing audio/video capabilities.
+ * If ppin is not NULL and ranges is also not null, enumerate all formats
+ * supported by the selected pin.
  */
 static int
 dshow_cycle_pins(AVFormatContext *avctx, enum dshowDeviceType devtype,
-                 enum dshowSourceFilterType sourcetype, IBaseFilter *device_filter, IPin **ppin)
+                 enum dshowSourceFilterType sourcetype, IBaseFilter *device_filter,
+                 IPin **ppin, AVOptionRanges *ranges, enum AVDeviceCapabilitiesQueryType query_type)
 {
     struct dshow_ctx *ctx = avctx->priv_data;
     IEnumPins *pins = 0;
@@ -1250,6 +1374,7 @@ dshow_cycle_pins(AVFormatContext *avctx, enum dshowDeviceType devtype,
         wchar_t *pin_id = NULL;
         char *pin_buf = NULL;
         char *desired_pin_name = devtype == VideoDevice ? ctx->video_pin_name : ctx->audio_pin_name;
+        int nb_ranges = ranges ? ranges->nb_ranges : 0;
 
         IPin_QueryPinInfo(pin, &info);
         IBaseFilter_Release(info.pFilter);
@@ -1274,7 +1399,7 @@ dshow_cycle_pins(AVFormatContext *avctx, enum dshowDeviceType devtype,
 
         if (!ppin) {
             av_log(avctx, AV_LOG_INFO, " Pin \"%s\" (alternative pin name \"%s\")\n", name_buf, pin_buf);
-            dshow_cycle_formats(avctx, devtype, pin, NULL);
+            dshow_cycle_formats(avctx, devtype, pin, NULL, NULL, AV_DEV_CAP_QUERY_NONE);
             goto next;
         }
 
@@ -1288,12 +1413,15 @@ dshow_cycle_pins(AVFormatContext *avctx, enum dshowDeviceType devtype,
 
         // will either try to find format matching options supplied by user
         // or try to open default format. Successful if returns with format_set==1
-        dshow_cycle_formats(avctx, devtype, pin, &format_set);
+        // if ranges is non-NULL, will iterate over all formats and return info
+        // about all the valid ones. If any valid found, format_set==1, else
+        // format_set will be 0
+        dshow_cycle_formats(avctx, devtype, pin, &format_set, ranges, query_type);
         if (!format_set) {
             goto next;
         }
 
-        if (devtype == AudioDevice && ctx->audio_buffer_size) {
+        if (devtype == AudioDevice && ctx->audio_buffer_size && !ranges) {
             if (dshow_set_audio_buffer_size(avctx, pin) < 0) {
                 av_log(avctx, AV_LOG_ERROR, "unable to set audio buffer size %d to pin, using pin anyway...", ctx->audio_buffer_size);
             }
@@ -1306,8 +1434,25 @@ dshow_cycle_pins(AVFormatContext *avctx, enum dshowDeviceType devtype,
 next:
         if (p)
             IKsPropertySet_Release(p);
-        if (device_pin != pin)
+        if (device_pin != pin) {
             IPin_Release(pin);
+            // remove any option ranges info we just added, wrong pin
+            if (ranges && nb_ranges>0) {
+                int nb_original_entries = nb_ranges * ranges->nb_components;
+                for (int i = nb_original_entries; i < ranges->nb_ranges * ranges->nb_components; i++) {
+                    AVOptionRange *range = ranges->range[i];
+                    if (range) {
+                        av_freep(&range->str);
+                        av_freep(&ranges->range[i]);
+                    }
+                }
+                if (av_reallocp_array(&ranges->range, nb_original_entries, sizeof(*ranges->range)) < 0)
+                    ranges->nb_ranges = 0;
+                else
+                    ranges->nb_ranges = nb_ranges;
+            }
+            device_pin = NULL;
+        }
         av_free(name_buf);
         av_free(pin_buf);
         if (pin_id)
@@ -1339,10 +1484,12 @@ next:
  */
 static int
 dshow_list_device_options(AVFormatContext *avctx, ICreateDevEnum *devenum,
-                          enum dshowDeviceType devtype, enum dshowSourceFilterType sourcetype)
+                          enum dshowDeviceType devtype, enum dshowSourceFilterType sourcetype,
+                          AVOptionRanges *ranges, enum AVDeviceCapabilitiesQueryType query_type)
 {
     struct dshow_ctx *ctx = avctx->priv_data;
     IBaseFilter *device_filter = NULL;
+    IPin *device_pin = NULL;
     char *device_unique_name = NULL;
     int r;
 
@@ -1350,7 +1497,7 @@ dshow_list_device_options(AVFormatContext *avctx, ICreateDevEnum *devenum,
         return r;
     ctx->device_filter[devtype] = device_filter;
     ctx->device_unique_name[devtype] = device_unique_name;
-    if ((r = dshow_cycle_pins(avctx, devtype, sourcetype, device_filter, NULL)) < 0)
+    if ((r = dshow_cycle_pins(avctx, devtype, sourcetype, device_filter, ranges ? &device_pin : NULL, ranges, query_type)) < 0)
         return r;
     return 0;
 }
@@ -1433,7 +1580,7 @@ dshow_open_device(AVFormatContext *avctx, ICreateDevEnum *devenum,
         goto error;
     }
 
-    if ((r = dshow_cycle_pins(avctx, devtype, sourcetype, device_filter, &device_pin)) < 0) {
+    if ((r = dshow_cycle_pins(avctx, devtype, sourcetype, device_filter, &device_pin, NULL, AV_DEV_CAP_QUERY_NONE)) < 0) {
         ret = r;
         goto error;
     }
@@ -1856,14 +2003,14 @@ static int dshow_read_header(AVFormatContext *avctx)
     }
     if (ctx->list_options) {
         if (ctx->device_name[VideoDevice])
-            if ((r = dshow_list_device_options(avctx, devenum, VideoDevice, VideoSourceDevice))) {
+            if ((r = dshow_list_device_options(avctx, devenum, VideoDevice, VideoSourceDevice, NULL, AV_DEV_CAP_QUERY_NONE))) {
                 ret = r;
                 goto error;
             }
         if (ctx->device_name[AudioDevice]) {
-            if (dshow_list_device_options(avctx, devenum, AudioDevice, AudioSourceDevice)) {
+            if (dshow_list_device_options(avctx, devenum, AudioDevice, AudioSourceDevice, NULL, AV_DEV_CAP_QUERY_NONE)) {
                 /* show audio options from combined video+audio sources as fallback */
-                if ((r = dshow_list_device_options(avctx, devenum, AudioDevice, VideoSourceDevice))) {
+                if ((r = dshow_list_device_options(avctx, devenum, AudioDevice, VideoSourceDevice, NULL, AV_DEV_CAP_QUERY_NONE))) {
                     ret = r;
                     goto error;
                 }
@@ -2010,6 +2157,249 @@ static int dshow_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ctx->eof ? AVERROR(EIO) : pkt->size;
 }
 
+// TODO: consider if and how to expose extra info we have about formats, such as color_range
+static int dshow_query_ranges(AVOptionRanges **ranges_arg, void *obj, const char *key, int flags)
+{
+    AVDeviceCapabilitiesQuery *caps = obj;
+    const AVFormatContext *avctx = caps->device_context;
+    struct dshow_ctx *ctx = avctx->priv_data;
+
+    int backup_sample_size;
+    int backup_sample_rate;
+    int backup_channels;
+    enum AVCodecID backup_video_codec_id;
+    enum AVPixelFormat backup_pixel_format;
+    int backup_requested_width;
+    int backup_requested_height;
+    char* backup_framerate = NULL;
+
+    enum AVDeviceCapabilitiesQueryType query_type = AV_DEV_CAP_QUERY_NONE;
+
+    AVOptionRanges *ranges = av_mallocz(sizeof(**ranges_arg));
+    const AVOption *field = av_opt_find(obj, key, NULL, 0, flags);
+    int ret;
+
+    ICreateDevEnum *devenum = NULL;
+
+    *ranges_arg = NULL;
+
+    if (!ranges) {
+        ret = AVERROR(ENOMEM);
+        goto fail1;
+    }
+
+    if (!field) {
+        ret = AVERROR_OPTION_NOT_FOUND;
+        goto fail1;
+    }
+
+    // turn option name into cap query
+    query_type = ff_device_get_query_type(field->name);
+
+    if (query_type == AV_DEV_CAP_QUERY_CHANNEL_LAYOUT || query_type == AV_DEV_CAP_QUERY_WINDOW_SIZE) {
+        av_log(avctx, AV_LOG_ERROR, "Querying the option %s is not supported for a dshow device\n", field->name);
+        ret = AVERROR(EINVAL);
+        goto fail1;
+    }
+
+    // take backup of dshow parameters/options
+    // audio
+    backup_sample_size = ctx->sample_size;
+    backup_sample_rate = ctx->sample_rate;
+    backup_channels = ctx->channels;
+    // video
+    backup_video_codec_id = ctx->video_codec_id;
+    backup_pixel_format = ctx->pixel_format;
+    backup_requested_width = ctx->requested_width;
+    backup_requested_height= ctx->requested_height;
+    backup_framerate = ctx->framerate;
+
+
+    // set format constraints set in AVDeviceCapabilitiesQuery
+    // audio (NB: channel_layout not used)
+    ctx->sample_size = av_get_bytes_per_sample(caps->sample_format) << 3;
+    ctx->sample_rate = (caps->sample_rate == -1) ? 0 : caps->sample_rate;
+    ctx->channels = (caps->channels == -1) ? 0 : caps->channels;
+    // video (NB: window_width and window_height not used)
+    ctx->video_codec_id = caps->codec;
+    ctx->pixel_format = caps->pixel_format;
+    ctx->requested_width = caps->frame_width;
+    ctx->requested_height = caps->frame_height;
+    // dshow checks whether requested framerate is set by means of !ctx->framerate.
+    // fill with something
+    if (!isnan(caps->fps)) {
+        ctx->requested_framerate = av_d2q(caps->fps, INT_MAX);
+        ctx->framerate = av_strdup("dummy");    // just make sure its non-zero
+        if (!ctx->framerate) {
+            ret = AVERROR(ENOMEM);
+            goto fail2;
+        }
+    }
+    else
+        ctx->framerate = NULL;  // make sure its NULL (if it wasn't, we already have a backup of the pointer to restore later)
+
+    // now iterate matching format of pin that would be selected when device
+    // is opened with options currently in effect.
+    // for each matching format, output its parameter range, also if that same
+    // range already returned for another format. That way, user can reconstruct
+    // possible valid combinations by av_opt_query_ranges() for each of the
+    // format options and matching returned values by sequence number.
+    if (CoCreateInstance(&CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+                         &IID_ICreateDevEnum, (void **) &devenum)) {
+        av_log(avctx, AV_LOG_ERROR, "Could not enumerate system devices.\n");
+        ret = AVERROR(EIO);
+        goto fail2;
+    }
+
+    ctx->video_codec_id = ctx->video_codec_id ? ctx->video_codec_id
+                                              : AV_CODEC_ID_RAWVIDEO;
+
+    ranges->nb_components = (field->type == AV_OPT_TYPE_IMAGE_SIZE && (flags & AV_OPT_MULTI_COMPONENT_RANGE)) ? 3 : 1;
+    if (ctx->device_name[VideoDevice])
+        if ((ret = dshow_list_device_options(avctx, devenum, VideoDevice, VideoSourceDevice, ranges, query_type)) < 0)
+            goto fail2;
+    if (ctx->device_name[AudioDevice]) {
+        if (dshow_list_device_options(avctx, devenum, AudioDevice, AudioSourceDevice, ranges, query_type) < 0) {
+            /* show audio options from combined video+audio sources as fallback */
+            if ((ret = dshow_list_device_options(avctx, devenum, AudioDevice, VideoSourceDevice, ranges, query_type)) < 0)
+                goto fail2;
+        }
+    }
+    ret = ranges->nb_ranges ? ranges->nb_components : 0;
+
+    // when dealing with a multi-component item (regardless of whether
+    // AV_OPT_MULTI_COMPONENT_RANGE is set or not), we need to reorganize the
+    // output range array from [r1_c1 r1_c2 r1_c3 r2_c1 r2_c2 r2_c3 ...] to
+    // [r1_c1 r2_c1 ... r1_c2 r2_c2 ... r1_c3 r2_c3 ...] to be consistent with
+    // documentation of AVOptionRanges in libavutil/opt.h
+    if (ranges->nb_ranges && ranges->nb_components > 1) {
+        AVOptionRange **new_range = av_malloc_array(ranges->nb_components * ranges->nb_ranges, sizeof(*ranges->range));
+        AVOptionRange **old_range = ranges->range;
+        if (!new_range) {
+            ret = AVERROR(ENOMEM);
+            goto fail2;
+        }
+        ranges->nb_ranges /= ranges->nb_components;
+        for (int n = 0; n < ranges->nb_components * ranges->nb_ranges; n++) {
+            int i = n / ranges->nb_components;
+            int j = n % ranges->nb_components;
+            new_range[ranges->nb_ranges * j + i] = old_range[n];
+        }
+        ranges->range = new_range;
+        av_freep(&old_range);
+    }
+
+    // success, set output
+    *ranges_arg = ranges;
+
+fail2:
+    // set dshow parameters/options back to original values
+    // audio
+    ctx->sample_size = backup_sample_size;
+    ctx->sample_rate = backup_sample_rate;
+    ctx->channels = backup_channels;
+    // video
+    ctx->video_codec_id = backup_video_codec_id;
+    ctx->pixel_format = backup_pixel_format;
+    ctx->requested_width = backup_requested_width;
+    ctx->requested_height = backup_requested_height;
+    if (ctx->framerate)
+        av_free(ctx->framerate);
+    ctx->framerate = backup_framerate;
+
+    if (devenum)
+        ICreateDevEnum_Release(devenum);
+
+fail1:
+    if (ret < 0)
+        av_opt_freep_ranges(&ranges);
+
+    return ret;
+}
+
+// fake class to point av_opt_query_ranges to our query_ranges function
+static const AVClass dshow_dev_caps_class = {
+    .class_name   = "",
+    .item_name    = av_default_item_name,
+    .option       = ff_device_capabilities,
+    .version      = LIBAVUTIL_VERSION_INT,
+    .query_ranges = dshow_query_ranges,
+};
+
+static int dshow_create_device_capabilities(struct AVFormatContext *avctx, AVDeviceCapabilitiesQuery *caps)
+{
+    struct dshow_ctx *ctx = avctx->priv_data;
+    int ret = 0;
+    ICreateDevEnum *devenum = NULL;
+
+    // set class so queries work
+    caps->av_class = &dshow_dev_caps_class;
+
+    if (ctx->device_name[0] || ctx->device_name[1]) {
+        av_log(avctx, AV_LOG_ERROR, "You cannot query device capabilities on an opened device\n");
+        ret = AVERROR(EIO);
+        goto fail;
+    }
+
+    if (!parse_device_name(avctx)) {
+        av_log(avctx, AV_LOG_ERROR, "You must set a device name (AVFormatContext url) to specify which device to query capabilities from\n");
+        ret = AVERROR(EINVAL);
+        goto fail;
+    }
+
+    CoInitialize(0);
+    if (CoCreateInstance(&CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+                         &IID_ICreateDevEnum, (void **) &devenum)) {
+        av_log(avctx, AV_LOG_ERROR, "Could not enumerate system devices.\n");
+        ret = AVERROR(EIO);
+        goto fail;
+    }
+
+    // check devices can be found
+    if (ctx->device_name[VideoDevice]) {
+        IBaseFilter *device_filter = NULL;
+        char *device_unique_name = NULL;
+        if ((ret = dshow_cycle_devices(avctx, devenum, VideoDevice, VideoSourceDevice, &device_filter, &device_unique_name, NULL)) < 0)
+            return ret;
+
+        if (ret >= 0) {
+            ctx->device_filter[VideoDevice] = device_filter;
+            ctx->device_unique_name[VideoDevice] = device_unique_name;
+        }
+    }
+    if (ctx->device_name[AudioDevice]) {
+        IBaseFilter *device_filter = NULL;
+        char *device_unique_name = NULL;
+        if (dshow_cycle_devices(avctx, devenum, AudioDevice, AudioSourceDevice, &device_filter, &device_unique_name, NULL) < 0) {
+            /* try to access audio from combined video+audio sources as fallback */
+            if ((ret = dshow_cycle_devices(avctx, devenum, AudioDevice, VideoSourceDevice, &device_filter, &device_unique_name, NULL)) < 0)
+                goto fail;
+        }
+        if (ret >= 0) {
+            ctx->device_filter[AudioDevice] = device_filter;
+            ctx->device_unique_name[AudioDevice] = device_unique_name;
+        }
+    }
+
+fail:
+    if (devenum)
+        ICreateDevEnum_Release(devenum);
+
+    if (ret < 0)
+        return ret;
+    else
+        return 0;
+}
+
+static int dshow_free_device_capabilities(struct AVFormatContext *avctx, AVDeviceCapabilitiesQuery *caps)
+{
+    // clear state variables that may have been set during the querying process
+    // (e.g. frees device names, removes device_filters, etc)
+    dshow_read_close(avctx);
+
+    return 0;
+}
+
 #define OFFSET(x) offsetof(struct dshow_ctx, x)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 static const AVOption options[] = {
@@ -2059,6 +2449,8 @@ const AVInputFormat ff_dshow_demuxer = {
     .read_close     = dshow_read_close,
     .get_device_list= dshow_get_device_list,
     .control_message= dshow_control_message,
+    .create_device_capabilities = dshow_create_device_capabilities,
+    .free_device_capabilities = dshow_free_device_capabilities,
     .flags          = AVFMT_NOFILE | AVFMT_NOBINSEARCH | AVFMT_NOGENSEARCH | AVFMT_NO_BYTE_SEEK,
     .priv_class     = &dshow_class,
 };
