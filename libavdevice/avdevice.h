@@ -360,7 +360,7 @@ int avdevice_dev_to_app_control_message(struct AVFormatContext *s,
  *                      type: AV_OPT_TYPE_INT (AVCodecID value)
  *  - Capabilities valid for audio devices:
  *    - sample_format:  supported sample formats.
- *                      type: AV_OPT_TYPE_INT (AVSampleFormat value)
+ *                      type: AV_OPT_TYPE_SAMPLE_FMT
  *    - sample_rate:    supported sample rates.
  *                      type: AV_OPT_TYPE_INT
  *    - channels:       supported number of channels.
@@ -369,13 +369,13 @@ int avdevice_dev_to_app_control_message(struct AVFormatContext *s,
  *                      type: AV_OPT_TYPE_INT64
  *  - Capabilities valid for video devices:
  *    - pixel_format:   supported pixel formats.
- *                      type: AV_OPT_TYPE_INT (AVPixelFormat value)
+ *                      type: AV_OPT_TYPE_PIXEL_FMT
  *    - window_size:    supported window sizes (describes size of the window size presented to the user).
  *                      type: AV_OPT_TYPE_IMAGE_SIZE
  *    - frame_size:     supported frame sizes (describes size of provided video frames).
  *                      type: AV_OPT_TYPE_IMAGE_SIZE
  *    - fps:            supported fps values
- *                      type: AV_OPT_TYPE_RATIONAL
+ *                      type: AV_OPT_TYPE_DOUBLE
  *
  * Value of the capability may be set by user using av_opt_set() function
  * and AVDeviceCapabilitiesQuery object. Following queries will

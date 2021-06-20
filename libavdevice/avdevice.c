@@ -43,8 +43,8 @@ const AVOption ff_device_capabilities[] = {
         {.str = NULL}, -1, INT_MAX, E|D|V },
     { "frame_size", "frame size", OFFSET(frame_width), AV_OPT_TYPE_IMAGE_SIZE,
         {.str = NULL}, -1, INT_MAX, E|D|V },
-    { "fps", "fps", OFFSET(fps), AV_OPT_TYPE_RATIONAL,
-        {.dbl = -1}, -1, INT_MAX, E|D|V },
+    { "fps", "fps", OFFSET(fps), AV_OPT_TYPE_DOUBLE,
+        {.dbl = NAN}, 0, INT_MAX, E|D|V },
     { NULL }
 };
 

@@ -50,7 +50,9 @@ struct AVDeviceCapabilitiesQuery {
     int window_height;
     int frame_width;
     int frame_height;
-    AVRational fps;
+    // NB: an AVRational cannot be represented in the AVOptionRange
+    // output of av_opt_query_ranges, so we store fps as double instead
+    double fps;
 };
 
 /**
