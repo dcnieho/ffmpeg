@@ -345,6 +345,9 @@ struct dshow_ctx {
     int sample_rate;
     int sample_size;
     int channels;
+
+    // for capabilities query
+    int cap_query_already_opened;
 };
 
 /*****************************************************************************

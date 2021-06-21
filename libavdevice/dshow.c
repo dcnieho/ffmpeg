@@ -849,7 +849,7 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
     void *caps = NULL;
     int i, n, size, r;
     int wait_for_better = 0;
-    int use_default;
+    int use_default, already_opened;
 
     // format parameters requested by user
     // if none are requested by user, the values will below be set to
@@ -874,6 +874,9 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
     caps = av_malloc(size);
     if (!caps)
         goto end;
+
+    // get if device is already opened
+    already_opened = ctx->device_name[0] || ctx->device_name[1];
 
     /**
      * If we should open the device with the default format,
@@ -1153,7 +1156,7 @@ dshow_cycle_formats(AVFormatContext *avctx, enum dshowDeviceType devtype,
         // in ranges, try to apply in all cases, and store
         // caps if successfully applied
         if (!wait_for_better || ranges) {
-            if (IAMStreamConfig_SetFormat(config, type) != S_OK)
+            if (!already_opened && IAMStreamConfig_SetFormat(config, type) != S_OK) // skip if device already opened
                 goto next;
             else if (ranges) {
                 // format matched and could be set successfully.
@@ -1494,12 +1497,19 @@ dshow_list_device_options(AVFormatContext *avctx, ICreateDevEnum *devenum,
     char *device_unique_name = NULL;
     int r;
 
-    if ((r = dshow_cycle_devices(avctx, devenum, devtype, sourcetype, &device_filter, &device_unique_name, NULL)) < 0)
-        return r;
-    ctx->device_filter[devtype] = device_filter;
-    ctx->device_unique_name[devtype] = device_unique_name;
+    if (!ctx->device_filter[devtype]) {
+        if ((r = dshow_cycle_devices(avctx, devenum, devtype, sourcetype, &device_filter, &device_unique_name, NULL)) < 0)
+            return r;
+
+        // put them in context so they'll be cleaned up again
+        ctx->device_filter[devtype] = device_filter;
+        ctx->device_unique_name[devtype] = device_unique_name;
+    } else
+        device_filter = ctx->device_filter[devtype];
+
     if ((r = dshow_cycle_pins(avctx, devtype, sourcetype, device_filter, ranges ? &device_pin : NULL, ranges, query_type)) < 0)
         return r;
+
     return 0;
 }
 
@@ -2319,7 +2329,8 @@ fail1:
     return ret;
 }
 
-// fake class to point av_opt_query_ranges to our query_ranges function
+// fake class to point av_opt functions to capabilities that can be queried,
+// and av_opt_query_ranges to our query_ranges function
 static const AVClass dshow_dev_caps_class = {
     .class_name   = "",
     .item_name    = av_default_item_name,
@@ -2337,49 +2348,51 @@ static int dshow_create_device_capabilities(struct AVFormatContext *avctx, AVDev
     // set class so queries work
     caps->av_class = &dshow_dev_caps_class;
 
-    if (ctx->device_name[0] || ctx->device_name[1]) {
-        av_log(avctx, AV_LOG_ERROR, "You cannot query device capabilities on an opened device\n");
-        ret = AVERROR(EIO);
-        goto fail;
-    }
+    // check if device setup is needed or we will be querying capabilities of an already opened device
+    ctx->cap_query_already_opened = ctx->device_name[0] || ctx->device_name[1];
+    if (ctx->cap_query_already_opened)
+        av_log(avctx, AV_LOG_WARNING, "Querying device capabilities on an opened device: may yield false positives\n");
 
-    if (!parse_device_name(avctx)) {
-        av_log(avctx, AV_LOG_ERROR, "You must set a device name (AVFormatContext url) to specify which device to query capabilities from\n");
-        ret = AVERROR(EINVAL);
-        goto fail;
-    }
-
-    CoInitialize(0);
-    if (CoCreateInstance(&CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
-                         &IID_ICreateDevEnum, (void **) &devenum)) {
-        av_log(avctx, AV_LOG_ERROR, "Could not enumerate system devices.\n");
-        ret = AVERROR(EIO);
-        goto fail;
-    }
-
-    // check devices can be found
-    if (ctx->device_name[VideoDevice]) {
-        IBaseFilter *device_filter = NULL;
-        char *device_unique_name = NULL;
-        if ((ret = dshow_cycle_devices(avctx, devenum, VideoDevice, VideoSourceDevice, &device_filter, &device_unique_name, NULL)) < 0)
-            return ret;
-
-        if (ret >= 0) {
-            ctx->device_filter[VideoDevice] = device_filter;
-            ctx->device_unique_name[VideoDevice] = device_unique_name;
+    // if device not already opened, check that what user specified can be opened
+    if (!ctx->cap_query_already_opened) {
+        if (!parse_device_name(avctx)) {
+            av_log(avctx, AV_LOG_ERROR, "You must set a device name (AVFormatContext url) to specify which device to query capabilities from\n");
+            ret = AVERROR(EINVAL);
+            goto fail;
         }
-    }
-    if (ctx->device_name[AudioDevice]) {
-        IBaseFilter *device_filter = NULL;
-        char *device_unique_name = NULL;
-        if (dshow_cycle_devices(avctx, devenum, AudioDevice, AudioSourceDevice, &device_filter, &device_unique_name, NULL) < 0) {
-            /* try to access audio from combined video+audio sources as fallback */
-            if ((ret = dshow_cycle_devices(avctx, devenum, AudioDevice, VideoSourceDevice, &device_filter, &device_unique_name, NULL)) < 0)
-                goto fail;
+
+        CoInitialize(0);
+        if (CoCreateInstance(&CLSID_SystemDeviceEnum, NULL, CLSCTX_INPROC_SERVER,
+                             &IID_ICreateDevEnum, (void **) &devenum)) {
+            av_log(avctx, AV_LOG_ERROR, "Could not enumerate system devices.\n");
+            ret = AVERROR(EIO);
+            goto fail;
         }
-        if (ret >= 0) {
-            ctx->device_filter[AudioDevice] = device_filter;
-            ctx->device_unique_name[AudioDevice] = device_unique_name;
+
+        // check devices can be found
+        if (ctx->device_name[VideoDevice]) {
+            IBaseFilter *device_filter = NULL;
+            char *device_unique_name = NULL;
+            if ((ret = dshow_cycle_devices(avctx, devenum, VideoDevice, VideoSourceDevice, &device_filter, &device_unique_name, NULL)) < 0)
+                return ret;
+
+            if (ret >= 0) {
+                ctx->device_filter[VideoDevice] = device_filter;
+                ctx->device_unique_name[VideoDevice] = device_unique_name;
+            }
+        }
+        if (ctx->device_name[AudioDevice]) {
+            IBaseFilter *device_filter = NULL;
+            char *device_unique_name = NULL;
+            if (dshow_cycle_devices(avctx, devenum, AudioDevice, AudioSourceDevice, &device_filter, &device_unique_name, NULL) < 0) {
+                /* try to access audio from combined video+audio sources as fallback */
+                if ((ret = dshow_cycle_devices(avctx, devenum, AudioDevice, VideoSourceDevice, &device_filter, &device_unique_name, NULL)) < 0)
+                    goto fail;
+            }
+            if (ret >= 0) {
+                ctx->device_filter[AudioDevice] = device_filter;
+                ctx->device_unique_name[AudioDevice] = device_unique_name;
+            }
         }
     }
 
@@ -2395,9 +2408,12 @@ fail:
 
 static int dshow_free_device_capabilities(struct AVFormatContext *avctx, AVDeviceCapabilitiesQuery *caps)
 {
+    struct dshow_ctx *ctx = avctx->priv_data;
+
     // clear state variables that may have been set during the querying process
     // (e.g. frees device names, removes device_filters, etc)
-    dshow_read_close(avctx);
+    if (!ctx->cap_query_already_opened)
+        dshow_read_close(avctx);
 
     return 0;
 }
