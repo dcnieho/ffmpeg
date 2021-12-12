@@ -2024,6 +2024,26 @@ AVProgram *av_new_program(AVFormatContext *s, int id);
  * @}
  */
 
+ /**
+  * Allocate an AVFormatContext for an input format.
+  * avformat_free_context() can be used to free the context and
+  * everything allocated by the framework within it. NB: in general
+  * the correct format cannot be known (unless the user has extra
+  * information) until the file is opened. If forcing a format by
+  * this method, but it turns out not to match the file's format
+  * upon avformat_open_input(), the latter will throw an error.
+  *
+  * @param *ctx is set to the created format context, or to NULL in
+  * case of failure
+  * @param iformat format to use for allocating the context, if NULL
+  * format_name is used instead
+  * @param format_name the name of input format to use for allocating the
+  * context
+  * @return >= 0 in case of success, a negative AVERROR code in case of
+  * failure
+  */
+int avformat_alloc_input_context(AVFormatContext **ctx, const AVInputFormat *iformat,
+                                 const char *format_name);
 
 /**
  * Allocate an AVFormatContext for an output format.
@@ -2119,9 +2139,9 @@ int av_probe_input_buffer(AVIOContext *pb, const AVInputFormat **fmt,
  * Open an input stream and read the header. The codecs are not opened.
  * The stream must be closed with avformat_close_input().
  *
- * @param ps Pointer to user-supplied AVFormatContext (allocated by avformat_alloc_context).
- *           May be a pointer to NULL, in which case an AVFormatContext is allocated by this
- *           function and written into ps.
+ * @param ps Pointer to user-supplied AVFormatContext (allocated by avformat_alloc_context, or
+ *           avformat_alloc_input_context). May be a pointer to NULL, in which case an
+ *           AVFormatContext is allocated by this function and written into ps.
  *           Note that a user-supplied AVFormatContext will be freed on failure.
  * @param url URL of the stream to open.
  * @param fmt If non-NULL, this parameter forces a specific input format.
@@ -2129,6 +2149,9 @@ int av_probe_input_buffer(AVIOContext *pb, const AVInputFormat **fmt,
  * @param options  A dictionary filled with AVFormatContext and demuxer-private options.
  *                 On return this parameter will be destroyed and replaced with a dict containing
  *                 options that were not found. May be NULL.
+ *                 Note that if a AVFormatContext allocated by avformat_alloc_input_context
+ *                 is provided, any demuxer-private options will be overwritten by their defaults
+ *                 before applying this new set of demuxer-private options, if any. 
  *
  * @return 0 on success, a negative AVERROR on failure.
  *

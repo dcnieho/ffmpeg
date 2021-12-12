@@ -217,6 +217,56 @@ FF_ENABLE_DEPRECATION_WARNINGS
     return 0;
 }
 
+
+int avformat_alloc_input_context(AVFormatContext** avctx, const AVInputFormat* iformat,
+    const char* format)
+{
+    AVFormatContext* s = avformat_alloc_context();
+    int ret = 0;
+
+    *avctx = NULL;
+    if (!s)
+        goto nomem;
+
+    if (!iformat) {
+        if (format) {
+            iformat = av_find_input_format(format);
+            if (!iformat) {
+                av_log(s, AV_LOG_ERROR, "Requested input format '%s' not found\n", format);
+                ret = AVERROR(EINVAL);
+                goto error;
+            }
+        }
+        else {
+            av_log(s, AV_LOG_ERROR, "You should provide an input format or the name of an input format when calling this function\n");
+            ret = AVERROR(EINVAL);
+            goto error;
+        }
+    }
+
+    s->iformat = iformat;
+    if (s->iformat->priv_data_size > 0) {
+        s->priv_data = av_mallocz(s->iformat->priv_data_size);
+        if (!s->priv_data)
+            goto nomem;
+        if (s->iformat->priv_class) {
+            *(const AVClass**)s->priv_data = s->iformat->priv_class;
+            av_opt_set_defaults(s->priv_data);
+        }
+    }
+    else
+        s->priv_data = NULL;
+
+    *avctx = s;
+    return 0;
+nomem:
+    av_log(s, AV_LOG_ERROR, "Out of memory\n");
+    ret = AVERROR(ENOMEM);
+error:
+    avformat_free_context(s);
+    return ret;
+}
+
 int avformat_open_input(AVFormatContext **ps, const char *filename,
                         const AVInputFormat *fmt, AVDictionary **options)
 {
@@ -233,8 +283,14 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
         av_log(NULL, AV_LOG_ERROR, "Input context has not been properly allocated by avformat_alloc_context() and is not NULL either\n");
         return AVERROR(EINVAL);
     }
-    if (fmt)
+    if (fmt) {
+        if (s->iformat) {
+            if (s->iformat->priv_class && s->priv_data)
+                av_opt_free(s->priv_data);
+            av_freep(&s->priv_data);
+        }
         s->iformat = fmt;
+    }
 
     if (options)
         av_dict_copy(&tmp, *options, 0);
@@ -245,7 +301,9 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
     if ((ret = av_opt_set_dict(s, &tmp)) < 0)
         goto fail;
 
-    if (!(s->url = av_strdup(filename ? filename : ""))) {
+    if (filename && s->url)
+        av_freep(&s->url);
+    if (!s->url && !(s->url = av_strdup(filename ? filename : ""))) {
         ret = AVERROR(ENOMEM);
         goto fail;
     }
@@ -288,12 +346,16 @@ int avformat_open_input(AVFormatContext **ps, const char *filename,
 
     s->duration = s->start_time = AV_NOPTS_VALUE;
 
-    /* Allocate private data. */
+    /* Allocate private data and set options. */
     if (s->iformat->priv_data_size > 0) {
-        if (!(s->priv_data = av_mallocz(s->iformat->priv_data_size))) {
-            ret = AVERROR(ENOMEM);
-            goto fail;
+        /* allocate if not already allocated */
+        if (!s->priv_data) {
+            if (!(s->priv_data = av_mallocz(s->iformat->priv_data_size))) {
+                ret = AVERROR(ENOMEM);
+                goto fail;
+            }
         }
+        /* Overwrite any options already set (1: back to defaults, 2: apply options, if any) */
         if (s->iformat->priv_class) {
             *(const AVClass **) s->priv_data = s->iformat->priv_class;
             av_opt_set_defaults(s->priv_data);
