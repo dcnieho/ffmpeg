@@ -16,6 +16,7 @@ EXAMPLES=       avio_list_dir                      \
                 decode_audio                       \
                 decode_video                       \
                 demuxing_decoding                  \
+                device_get_capabilities            \
                 encode_audio                       \
                 encode_video                       \
                 extract_mvs                        \

@@ -384,38 +384,7 @@ int avdevice_dev_to_app_control_message(struct AVFormatContext *s,
  * For example, setting a codec may impact number of formats or fps values
  * returned during next query. Setting invalid value may limit results to zero.
  *
- * Example of the usage basing on opengl output device:
- *
- * @code
- *  AVFormatContext *oc = NULL;
- *  AVDeviceCapabilitiesQuery *caps = NULL;
- *  AVOptionRanges *ranges;
- *  int ret;
- *
- *  if ((ret = avformat_alloc_output_context2(&oc, NULL, "opengl", NULL)) < 0)
- *      goto fail;
- *  if (avdevice_capabilities_create(&caps, oc, NULL) < 0)
- *      goto fail;
- *
- *  //query codecs
- *  if (av_opt_query_ranges(&ranges, caps, "codec", AV_OPT_MULTI_COMPONENT_RANGE)) < 0)
- *      goto fail;
- *  //pick codec here and set it
- *  av_opt_set(caps, "codec", AV_CODEC_ID_RAWVIDEO, 0);
- *
- *  //query format
- *  if (av_opt_query_ranges(&ranges, caps, "pixel_format", AV_OPT_MULTI_COMPONENT_RANGE)) < 0)
- *      goto fail;
- *  //pick format here and set it
- *  av_opt_set(caps, "pixel_format", AV_PIX_FMT_YUV420P, 0);
- *
- *  //query and set more capabilities
- *
- * fail:
- *  //clean up code
- *  avdevice_capabilities_free(&query, oc);
- *  avformat_free_context(oc);
- * @endcode
+ * @see examples/device_get_capabilities.c
  */
 typedef struct AVDeviceCapabilitiesQuery AVDeviceCapabilitiesQuery;
 

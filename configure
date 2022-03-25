@@ -1728,6 +1728,7 @@ EXAMPLE_LIST="
     decode_audio_example
     decode_video_example
     demuxing_decoding_example
+    device_get_capabilities_example
     encode_audio_example
     encode_video_example
     extract_mvs_example
@@ -3763,6 +3764,7 @@ avio_reading_deps="avformat avcodec avutil"
 decode_audio_example_deps="avcodec avutil"
 decode_video_example_deps="avcodec avutil"
 demuxing_decoding_example_deps="avcodec avformat avutil"
+device_get_capabilities_example_deps="avdevice avformat avutil"
 encode_audio_example_deps="avcodec avutil"
 encode_video_example_deps="avcodec avutil"
 extract_mvs_example_deps="avcodec avformat avutil"
