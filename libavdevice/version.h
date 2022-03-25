@@ -26,10 +26,11 @@
  */
 
 #include "libavutil/version.h"
+#include "libavutil/macros.h"
 
 #include "version_major.h"
 
-#define LIBAVDEVICE_VERSION_MINOR   6
+#define LIBAVDEVICE_VERSION_MINOR   7
 #define LIBAVDEVICE_VERSION_MICRO 100
 
 #define LIBAVDEVICE_VERSION_INT AV_VERSION_INT(LIBAVDEVICE_VERSION_MAJOR, \
@@ -41,5 +42,15 @@
 #define LIBAVDEVICE_BUILD       LIBAVDEVICE_VERSION_INT
 
 #define LIBAVDEVICE_IDENT       "Lavd" AV_STRINGIFY(LIBAVDEVICE_VERSION)
+
+/**
+ * avdevice_version_same_minor() expands to a function with
+ * the same minor and major version it was compiled against
+ * encoded in it. Enables locking to the minor version of
+ * other libraries they were compiled against. Does not have
+ * to be called by user.
+ */
+#define avdevice_version_same_minor AV_MAKE_MAJOR_MINOR_FUNC_NAME(device,LIBAVFORMAT_VERSION_MAJOR,LIBAVFORMAT_VERSION_MINOR)
+unsigned avdevice_version_same_minor(void);
 
 #endif /* AVDEVICE_VERSION_H */

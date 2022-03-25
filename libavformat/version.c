@@ -33,6 +33,11 @@ unsigned avformat_version(void)
     return LIBAVFORMAT_VERSION_INT;
 }
 
+unsigned avformat_version_same_minor(void)
+{
+    return avformat_version();
+}
+
 const char *avformat_configuration(void)
 {
     return FFMPEG_CONFIGURATION;

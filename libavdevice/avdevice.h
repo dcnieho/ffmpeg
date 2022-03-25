@@ -47,6 +47,16 @@
  *
  * To use libavdevice, simply call avdevice_register_all() to register all
  * compiled muxers and demuxers. They all use standard libavformat API.
+ * 
+ * Note that libavdevice is locked to be used with the same major and minor
+ * version of libavformat that it was built against. Attempting to use a 
+ * shared build of FFmpeg or its libavdevice library with a libavformat of
+ * a different major or minor version will generate a dynamic linker error.
+ * This is achieved by the internal function check_avformat_same_minor() in 
+ * avdevice.c. This function does not have to be called, its call to
+ * avformat_version_same_minor() (a macro which expands to a name with the
+ * specific major and minor version of avformat embedded in it) is sufficient
+ * to trigger link failure.
  *
  * @{
  */

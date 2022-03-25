@@ -76,6 +76,9 @@
  * situations may change slightly (and be documented). All those are accompanied
  * by an entry in doc/APIchanges and incrementing either the minor or micro
  * version number.
+ *
+ * Note that libavdevice is locked to a specific major and minor version of
+ * libavformat, see @ref lavd "libavdevice" for more details.
  */
 
 /**

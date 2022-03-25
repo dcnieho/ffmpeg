@@ -23,6 +23,7 @@
 #include "libavutil/avassert.h"
 #include "avdevice.h"
 #include "version.h"
+#include "libavformat/version.h"
 
 #include "libavutil/ffversion.h"
 const char av_device_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
@@ -31,6 +32,18 @@ unsigned avdevice_version(void)
 {
     av_assert0(LIBAVDEVICE_VERSION_MICRO >= 100);
     return LIBAVDEVICE_VERSION_INT;
+}
+
+unsigned avdevice_version_same_minor(void)
+{
+    // check version of loaded lavf has same major and minor version as
+    // this library was compiled against
+    // NB: this function doesn't have to be called, dynamic linker will
+    // signal error when avformat of wrong major or minor version is found.
+    if ((avformat_version_same_minor()) & ~0xFF != (LIBAVFORMAT_VERSION_INT & ~0xFF))
+        abort();
+
+    return avdevice_version();
 }
 
 const char * avdevice_configuration(void)

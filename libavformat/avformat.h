@@ -64,6 +64,9 @@
  * set by user for input, always set by user for output (unless you are dealing
  * with an AVFMT_NOFILE format).
  *
+ * Note that libavdevice is locked to a specific major and minor version of
+ * libavformat, see @ref lavd "libavdevice" for more details.
+ *
  * @section lavf_options Passing options to (de)muxers
  * It is possible to configure lavf muxers and demuxers using the @ref avoptions
  * mechanism. Generic (format-independent) libavformat options are provided by

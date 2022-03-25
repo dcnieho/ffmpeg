@@ -28,6 +28,7 @@
  */
 
 #include "libavutil/version.h"
+#include "libavutil/macros.h"
 
 #include "version_major.h"
 
@@ -43,5 +44,14 @@
 #define LIBAVFORMAT_BUILD       LIBAVFORMAT_VERSION_INT
 
 #define LIBAVFORMAT_IDENT       "Lavf" AV_STRINGIFY(LIBAVFORMAT_VERSION)
+
+/**
+ * avformat_version_same_minor() expands to a function with
+ * the same minor and major version it was compiled against
+ * encoded in it. Enables locking to the minor version of
+ * other libraries they were compiled against. 
+ */
+#define avformat_version_same_minor AV_MAKE_MAJOR_MINOR_FUNC_NAME(format,LIBAVFORMAT_VERSION_MAJOR,LIBAVFORMAT_VERSION_MINOR)
+unsigned avformat_version_same_minor(void);
 
 #endif /* AVFORMAT_VERSION_H */

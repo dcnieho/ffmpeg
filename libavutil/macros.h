@@ -73,6 +73,9 @@
  * @}
  */
 
+#define AV_MAKE_MAJOR_MINOR_FUNC_NAME_IMPL(name,major,minor) av ## name ## _version_ ## major ## _ ## minor
+#define AV_MAKE_MAJOR_MINOR_FUNC_NAME(name,major,minor) AV_MAKE_MAJOR_MINOR_FUNC_NAME_IMPL(name,major,minor)
+
 #define AV_PRAGMA(s) _Pragma(#s)
 
 #define FFALIGN(x, a) (((x)+(a)-1)&~((a)-1))
